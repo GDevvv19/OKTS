@@ -1,0 +1,10 @@
+.venv/
+build/
+dist/
+.DS_Store
+__pycache__/
+*.pyc
+samples/raw_reports/extracted/
+ShipReportBuilder-mac.zip
+ShipReportBuilder-source-mac.zip
+*.xlsx.tmp
