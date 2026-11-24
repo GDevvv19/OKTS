@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements-web.txt
-    startCommand: cd src && gunicorn web_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    startCommand: cd src && gunicorn web_app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 280
     envVars:
       - key: SHIPREPORT_PASSWORD
         sync: false

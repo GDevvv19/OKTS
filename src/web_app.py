@@ -23,7 +23,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from flask import Flask, request, session, redirect, url_for, send_file, Response
+from flask import Flask, request, session, redirect, url_for, send_file, Response, jsonify
+from werkzeug.exceptions import HTTPException
 
 from engine import ReportRequest, generate_report
 from lookup import lookup_device, format_lookup
@@ -33,6 +34,24 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
 app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024   # 300 MB upload cap
 
 PASSWORD = os.environ.get("SHIPREPORT_PASSWORD")
+
+
+# Any failure — a too-large upload, a timeout, an unexpected exception — must
+# come back as JSON with a readable message, never an HTML error page. The
+# frontend's /generate handler previously assumed "not JSON" meant "this is
+# the report," so an HTML error page got silently saved as a .xlsx file (the
+# exact "Excel cannot open the file" bug this was built to prevent).
+@app.errorhandler(HTTPException)
+def _json_http_error(e):
+    msg = f"Error {e.code}: {e.description}"
+    if e.code == 413:
+        msg = "Error: that upload is larger than this server allows (300 MB)."
+    return jsonify({"message": msg}), e.code
+
+
+@app.errorhandler(Exception)
+def _json_server_error(e):
+    return jsonify({"message": f"Error:\n{e}"}), 500
 
 
 # --------------------------------------------------------------------------- #
@@ -156,7 +175,25 @@ $('#genForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   log('Working… uploading files and building the report. This can take a while for large raw-data sets.');
   const fd = new FormData(e.target);
-  const r = await fetch('/generate', {method:'POST', body: fd});
+  let r;
+  try {
+    r = await fetch('/generate', {method:'POST', body: fd});
+  } catch (err) {
+    log('Error: could not reach the server (' + err + ').');
+    return;
+  }
+  // Any non-success response is an error, regardless of its content-type —
+  // never assume "not JSON" means "this must be the report file" (that's
+  // what let an HTML error page get silently saved as a .xlsx before).
+  if (!r.ok) {
+    let msg = 'Error ' + r.status + ': the server could not generate the report.';
+    try {
+      const j = await r.json();
+      if (j && j.message) msg = j.message;
+    } catch (err) { /* response wasn't JSON; keep the generic message */ }
+    log(msg);
+    return;
+  }
   if (r.headers.get('Content-Type') === 'application/json') {
     const j = await r.json();
     log(j.message);
